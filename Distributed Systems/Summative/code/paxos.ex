@@ -24,7 +24,7 @@ defmodule Paxos do
   end
 
   def run(state) do
-    IO.puts("#{inspect state} #{inspect {state.name, self()}}")
+    # IO.puts("#{inspect state} #{inspect {state.name, self()}}")
     state = receive do
       {:propose, pid, inst, value, t} ->
         handle_propose(state, pid, inst, value, t)
@@ -37,6 +37,8 @@ defmodule Paxos do
       {:decision, inst, value} ->
         state = MapSet.put(state.decisions, {inst, value})
         state
+      {:print_state} ->
+        IO.puts("#{inspect state}")
     end
     run(state)
   end
@@ -60,7 +62,7 @@ defmodule Paxos do
   defp handle_propose(state, pid, inst, value, t) do
     # Set the initial ballot number for this instance
     ballot = {state.name, 0}
-    IO.puts("#{inspect ballot}")
+
     # Send a prepare message to all participants
     for participant <- state.participants do
       send(participant, {:prepare, inst, ballot})
@@ -74,6 +76,7 @@ defmodule Paxos do
     num_responses = 0
     receive do
       {:prepare, inst, ballot} ->
+        IO.puts("Prepare: #{inspect inst}")
         # Check if the instance has already been decided
         if Map.has_key?(state.decisions, inst) do
           # Return the decided value if the instance has already been decided
@@ -83,8 +86,8 @@ defmodule Paxos do
           prev_ballot = Map.fetch(state.ballots, inst)
           if ballot > prev_ballot do
             # Update the ballot number and value for the instance if the ballot number is higher
-            state = Map.put(state, :ballots, Map.put(state.ballots, inst, ballot))
-            state = Map.put(state, :values, Map.put(state.values, inst, value))
+            state = %{state | ballots: MapSet.put(state.ballots, {inst, ballot})}
+            state = %{state | values: MapSet.put(state.values, {inst, value})}
             # Send a promise message to the proposer
             send(pid, {:promise, inst, ballot, value})
             # Continue waiting for responses
@@ -97,7 +100,7 @@ defmodule Paxos do
           end
         end
       {:promise, inst, prev_ballot, prev_value} ->
-        IO.puts("#{inspect inst}")
+        IO.puts("Promise: #{inspect inst}")
         if prev_ballot < ballot do
           # Update the ballot number if necessary
           ballot = {state.name, prev_ballot.value + 1}
@@ -107,6 +110,27 @@ defmodule Paxos do
         else
           # Abort the proposal if a higher ballot has already been seen
           {:abort}
+        end
+        if num_responses > length(state.participants) / 2 do
+          value = get_majority_value(responses)
+          for participant <- state.participants do
+            send(participant, {:accept, inst, ballot, value})
+          end
+
+          acceptances = MapSet.new
+          num_acceptances = 0
+          receive do
+            {:accept, inst, ballot, value} ->
+              acceptances = MapSet.put(acceptances, value)
+              num_acceptances = num_acceptances + 1
+          end
+
+          if num_acceptances > length(state.participants) / 2 do
+            state = Map.put(state, :decisions, Map.put(state.decisions, inst, value))
+            {:decision, value}
+          else
+            {:abort}
+          end
         end
         if num_responses < length(state.participants) do
           # Continue receiving responses if not all participants have responded
@@ -142,8 +166,12 @@ defmodule Paxos do
               {:timeout}
           end
         end
+      {:accepted, inst, ballot, value} ->
+        responses = MapSet.put(responses, value)
+        num_responses = num_responses + 1
       :timeout ->
         # Return timeout if the timer expires
+        Process.cancel_timer(timer)
         {:timeout}
     end
   end
@@ -163,6 +191,18 @@ defmodule Paxos do
             {:timeout}
         end
     end
+  end
+
+  # Helper methods
+  defp get_majority_value(responses) do
+    # Create a map of value counts
+    counts = Enum.reduce(responses, %{}, fn value, acc -> Map.update(acc, value, 1, &(&1 + 1)) end)
+    # Get the maximum value count
+    max_count = Map.values(counts) |> Enum.max
+    # Get the values with the maximum count
+    majority_values = Map.keys(counts) |> Enum.filter(fn value -> Map.fetch(counts, value) == max_count end)
+    # Return the first value in the list of majority values
+    Enum.at(majority_values, 0)
   end
 
   # Best Effort Broadcast helpers
