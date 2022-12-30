@@ -1,23 +1,24 @@
 defmodule Paxos do
+  @delta 1000
+
   def start(name, participants) do
     pid = spawn(Paxos, :init, [name, participants])
-
+    # :global.unregister_name(name)
     case :global.re_register_name(name, pid) do
       :yes -> pid
       :no -> :error
     end
-
     IO.puts("registered #{name}")
     pid
   end
 
   def init(name, participants) do
     start_beb(name)
-
     state = %{
       name: name,
       participants: participants,
-      alive: %MapSet{},
+      alive: MapSet.new(participants),
+      detected: %MapSet{},
       leader: nil,
       received: %MapSet{},
       proposals: %MapSet{},
@@ -25,9 +26,7 @@ defmodule Paxos do
       ballots: %MapSet{},
       values: %MapSet{}
     }
-
-    spawn_link(fn -> heartbeat(state) end)
-    state
+    Process.send_after(self(), {:heartbeat}, @delta)
     run(state)
   end
 
@@ -41,6 +40,24 @@ defmodule Paxos do
 
         {:get_decision, pid, inst, t} ->
           handle_get_decision(state, pid, inst, t)
+          state
+
+        {:heartbeat} ->
+          IO.puts("#{state.name}: #{inspect({:timeout})}")
+          state = check_and_probe(state, state.participants)
+          # state = %{state | alive: %MapSet{}}
+          Process.send_after(self(), {:heartbeat}, @delta)
+          state
+
+        {:heartbeat_request, pid} ->
+          IO.puts("#{state.name}: #{inspect({:heartbeat_request, pid})}")
+          send(pid, {:heartbeat_reply, state.name})
+          state
+
+        {:heartbeat_reply, name} ->
+          IO.puts("#{state.name}: #{inspect {:heartbeat_reply, name}}")
+          IO.puts("#{inspect state}")
+          %{state | alive: MapSet.put(state.alive, name)}
           state
 
         {:decision, inst, value} ->
@@ -67,7 +84,7 @@ defmodule Paxos do
 
   def get_decision(pid, inst, t) do
     data_msg = {:get_decision, pid, inst, t}
-    send(self(), data_msg)
+    send(pid, data_msg)
 
     # receive do
     # after
@@ -225,17 +242,40 @@ defmodule Paxos do
   end
 
   # Helper methods
-  defp heartbeat(state) do
-    # Set the heartbeat interval
-    # 1 second
-    interval = 1000
+  defp check_and_probe(state, []) do
+    if MapSet.size(state.alive) > length(state.participants) / 2 do
+      leader = get_leader(state.alive)
+      if leader == state.name do
+        state = %{state | leader: leader}
+        state
+      end
+    end
+  end
+  defp check_and_probe(state, [p | p_tail]) do
+    state = if p not in state.alive and p not in state.detected do
+      state = %{state | detected: MapSet.put(state.detected, p)}
+      state
+    else
+      state
+    end
+    case :global.whereis_name(p) do
+      pid when is_pid(pid) -> send(pid, {:heartbeat_request, self()})
+      :undefined -> :ok
+    end
 
+    check_and_probe(state, p_tail)
+  end
+
+  defp heartbeat(state) do
     # Send a heartbeat request to all participants
     # IO.puts("#{inspect Enum.map(state.participants, fn(p) -> :global.whereis_name(p) end)}")
     # beb_broadcast(:heartbeat, Enum.map(state.participants, fn(p) -> :global.whereis_name(p) end)})
-    for participant <- state.participants do
-      pid = Process.whereis(participant)
-      send(pid, :heartbeat)
+    # IO.puts("#{inspect state.participants}")
+    # IO.puts("#{inspect Enum.map(state.participants, fn(p) -> :global.whereis_name(p) end)}")
+    for participant <- Enum.map(state.participants, fn(p) -> :global.whereis_name(p) end) do
+      # pid = Process.whereis(participant)
+      # IO.puts("#{inspect pid}")
+      send(participant, :heartbeat)
     end
 
     # Receive heartbeat responses from participants
@@ -246,7 +286,7 @@ defmodule Paxos do
         state = %{state | alive: MapSet.put(state.alive, self())}
         state
     after
-      interval ->
+      @delta ->
         # No response was received within the interval, so the process is considered not alive
         state = %{state | alive: MapSet.delete(state.alive, self())}
         state
@@ -260,7 +300,6 @@ defmodule Paxos do
       if leader == state.name do
         # Run Paxos as the leader
         state = %{state | leader: leader}
-        run(state)
         state
       end
     else

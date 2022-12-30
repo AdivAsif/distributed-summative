@@ -17,7 +17,7 @@ defmodule ExcludeOnTimeout do
         state = %{
             name: name,
             processes: List.delete(processes, name),
-            delta: 10000, # timeout in millis
+            delta: 1000, # timeout in millis
             alive: MapSet.new(processes),
             detected: %MapSet{}
         }
@@ -39,7 +39,7 @@ defmodule ExcludeOnTimeout do
 
                 # Uncomment this line to simulate a delayed response by process :p1
                 # This results in all processes detecting :p1 as crashed.
-                if state.name == :p1, do: Process.sleep(10000)
+                # if state.name == :p1, do: Process.sleep(10000)
 
                 send(pid, {:heartbeat_reply, state.name})
                 state
