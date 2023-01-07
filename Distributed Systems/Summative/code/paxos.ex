@@ -161,26 +161,27 @@ defmodule Paxos do
 
   def propose(pid, inst, value, t) do
     send(pid, {:propose, pid, inst, value, t})
-    IO.puts("#{inspect self()}")
+    IO.puts("Propose self: #{inspect self()}")
+    value
 
-    receive do
-      {:decision, v} ->
-        IO.puts("Propose value: #{v}")
-        {:decision, v}
-    after
-      t ->
-        :timeout
-    end
+    # receive do
+    #   {:decision, v} ->
+    #     IO.puts("Propose value: #{v}")
+    #     {:decision, v}
+    # after
+    #   t ->
+    #     :timeout
+    # end
   end
 
   def get_decision(pid, inst, t) do
     send(pid, {:get_decision, pid, inst, t})
 
-    receive do
-    after
-      t ->
-        :timeout
-    end
+    # receive do
+    # after
+    #   t ->
+    #     :timeout
+    # end
   end
 
   defp generate_ballot_number(maxBallotNumber, participants) do

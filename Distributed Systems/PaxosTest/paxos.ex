@@ -27,13 +27,11 @@ defmodule Paxos do
   end
 
   def propose(pid, value) do
-    test = send(pid, {:propose, value})
-    IO.puts("Test propose: #{inspect test}")
+    send(pid, {:propose, value})
   end
 
   def start_ballot(pid) do
-    test = send(pid, {:start_ballot})
-    IO.puts("Test start ballot: #{inspect test}")
+    send(pid, {:start_ballot})
   end
 
   defp generate_ballot_number(maxBallotNumber, nodes) do
@@ -187,11 +185,6 @@ defmodule Paxos do
 
         {:propose, value} ->
           %{state | proposedValue: value}
-
-
-        {:print_state} ->
-          IO.puts("#{inspect(state)}")
-          state
 
         _ ->
           state
