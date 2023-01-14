@@ -54,7 +54,7 @@ defmodule PaxosTest do
                 IO.puts("#{inspect name}: started")
                 leader = (fn [h | _] -> h end).(participants)
                 if name == leader do
-                    IO.puts("Test propose value: #{inspect Paxos.propose(pid, 1, val, 10000)}")
+                    Paxos.propose(pid, 1, val, 10000)
                 end
                 {status, v} = wait_for_decision(pid, 1, 10000)
                 if status != :none do

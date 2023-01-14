@@ -16,11 +16,11 @@ defmodule Paxos do
     state = %{
       name: name,
       participants: participants,
-      minBallotNumber: 0,
+      minBallotNumber: %{},
       prevVotes: %{},
       prepareResults: %{},
       acceptResults: %{},
-      proposedValue: nil
+      proposedValue: %{}
     }
 
     run(state)
@@ -28,8 +28,11 @@ defmodule Paxos do
 
   def run(state) do
     receive do
-      {:propose, pid, inst, value, t} ->
+      {:propose, pid, inst, value, t, caller} ->
         {new_state, decided_value} = {state, value}
+        IO.puts("#{inspect(decided_value)}")
+        IO.puts("#{inspect caller}")
+        send(caller, {:ok, decided_value})
         {:ok, new_state, decided_value}
     end
 
@@ -37,14 +40,12 @@ defmodule Paxos do
   end
 
   def propose(pid, inst, value, t) do
-    send(pid, {:propose, pid, inst, value, t})
+    send(pid, {:propose, pid, inst, value, t, self()})
 
     receive do
-      {:ok, new_state, decided_value} ->
-        decided_value
-
-      {:error, reason} ->
-        {:error, reason}
+      {:ok, decide} ->
+        IO.puts("#{inspect(decide)}")
+        {:decision, decide}
     end
   end
 end

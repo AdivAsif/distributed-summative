@@ -21,7 +21,8 @@ defmodule Paxos do
       prevVotes: %{},
       prepareResults: %{},
       acceptResults: %{},
-      proposedValue: nil
+      proposedValue: nil,
+      caller: nil
     }
 
     run(state)
@@ -30,7 +31,8 @@ defmodule Paxos do
   def run(state) do
     state =
       receive do
-        {:propose, pid, inst, value, t} ->
+        {:propose, pid, inst, value, t, caller} ->
+          beb(state.participants, {:set_caller, caller})
           state = %{state | proposedValue: value}
           ballotNumber = generate_ballot_number(state.maxBallotNumber, state.participants)
           beb(state.participants, {:prepare, {0, state.name}})
@@ -133,18 +135,22 @@ defmodule Paxos do
           state
 
         {:decided, v} ->
-          send(self, {:decision, v})
+          send(state.caller, {:decision, v})
           state
 
-        {:get_decision, pid, inst, t} ->
+        {:get_decision, pid, inst, t, caller} ->
+          beb(state.participants, {:set_caller, caller})
+
           if state.proposedValue == nil do
-            IO.puts("#{inspect(state)}")
-            nil
+            send(state.caller, nil)
           else
-            IO.puts("#{inspect(state.proposedValue)}")
-            state.proposedValue
+            send(state.caller, {:decided, state.proposedValue})
           end
 
+          state
+
+        {:set_caller, caller} ->
+          state = %{state | caller: caller}
           state
 
         {:print_state} ->
@@ -159,11 +165,32 @@ defmodule Paxos do
   end
 
   def propose(pid, inst, value, t) do
-    send(pid, {:propose, pid, inst, value, t})
+    send(pid, {:propose, pid, inst, value, t, self()})
+
+    receive do
+      {:decision, v} ->
+        {:decision, v}
+
+      {:abort} ->
+        {:abort}
+    after
+      t ->
+        {:timeout}
+    end
   end
 
   def get_decision(pid, inst, t) do
-    send(pid, {:get_decision, pid, inst, t})
+    send(pid, {:get_decision, pid, inst, t, self()})
+
+    receive do
+      {:decided, v} ->
+        v
+      nil ->
+        nil
+    after
+      t ->
+        nil
+    end
   end
 
   defp generate_ballot_number(maxBallotNumber, participants) do
