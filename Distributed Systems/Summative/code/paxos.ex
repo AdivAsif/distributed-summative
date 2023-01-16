@@ -139,7 +139,9 @@ defmodule Paxos do
           state
 
         {:get_decision, pid, inst, t, caller} ->
-          beb(state.participants, {:set_caller, caller})
+          if state.caller == nil do
+            beb(state.participants, {:set_caller, caller})
+          end
 
           if state.proposedValue == nil do
             send(state.caller, nil)
@@ -185,6 +187,7 @@ defmodule Paxos do
     receive do
       {:decided, v} ->
         v
+
       nil ->
         nil
     after
