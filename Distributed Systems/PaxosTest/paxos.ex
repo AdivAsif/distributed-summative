@@ -72,13 +72,13 @@ defmodule Paxos do
       receive do
         {:start_ballot} ->
           ballotNumber = generate_ballot_number(state.maxBallotNumber, state.nodes)
-          IO.puts("#{inspect ballotNumber}")
           beb(state.nodes, {:prepare, {0, state.name}})
+          IO.puts("Generated ballot number: #{inspect ballotNumber} for process #{inspect state.name}")
           state = %{state | maxBallotNumber: ballotNumber}
           state
 
         {:prepare, {b, senderName}} ->
-          # IO.puts(state.maxBallotNumber)
+          IO.puts("State max ballot number: #{state.maxBallotNumber} for process #{inspect state.name} sent from #{inspect senderName}")
           if state.maxBallotNumber > b && Map.has_key?(state.prevVotes, state.maxBallotNumber) do
             send_msg(
               senderName,
