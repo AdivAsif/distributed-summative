@@ -1,5 +1,5 @@
 # IEx.Helpers.c "paxos.ex", "."
-IEx.Helpers.c "chatgptcode.ex", "."
+IEx.Helpers.c "thepaxos.ex", "."
 procs = [:p1, :p2, :p3]
 pids = Enum.map(procs, fn p -> Paxos.start(p, procs) end)
 Paxos.propose(:global.whereis_name(:p3), 1, {:hello, "world"}, 1000)

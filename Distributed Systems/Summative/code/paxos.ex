@@ -22,6 +22,7 @@ defmodule Paxos do
       prepareResults: %{},
       acceptResults: %{},
       proposedValue: nil,
+      decidedValue: nil,
       caller: nil
     }
 
@@ -59,6 +60,7 @@ defmodule Paxos do
                 Map.put(state.prepareResults, b, [x | Map.get(state.prepareResults, b, [])])
           }
 
+          IO.puts("#{inspect state}")
           if length(Map.get(state.prepareResults, b, [])) ==
                div(length(state.participants), 2) + 1 do
             if List.foldl(Map.get(state.prepareResults, b, []), true, fn elem, acc ->
@@ -136,17 +138,15 @@ defmodule Paxos do
 
         {:decided, v} ->
           send(state.caller, {:decision, v})
+          state = %{state | decidedValue: v}
           state
 
         {:get_decision, pid, inst, t, caller} ->
-          if state.caller == nil do
-            beb(state.participants, {:set_caller, caller})
-          end
-
-          if state.proposedValue == nil do
-            send(state.caller, nil)
+          if state.decidedValue == nil do
+            send(caller, nil)
           else
-            send(state.caller, {:decided, state.proposedValue})
+            IO.puts("#{inspect(state.prevVotes)}")
+            send(caller, {:decided, state.decidedValue})
           end
 
           state

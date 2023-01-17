@@ -24,6 +24,7 @@ defmodule Paxos do
   end
 
   def run(state) do
+    IO.puts("#{inspect state.instances} from process #{state.name}")
     state =
       receive do
         {:propose, pid, inst, value, t, caller} ->
