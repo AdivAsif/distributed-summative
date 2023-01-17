@@ -28,28 +28,41 @@ defmodule Paxos do
       receive do
         {:propose, pid, inst, value, t, caller} ->
           beb(state.participants, {:set_caller, caller})
-          state = %{state | instances: update_instance(state.instances, inst, :proposedValue, value)}
+
+          state = %{
+            state
+            | instances: update_instance(state.instances, inst, :proposedValue, value)
+          }
+
+          IO.puts("#{inspect state}")
 
           ballotNumber =
             generate_ballot_number(state.instances[inst].maxBallotNumber, state.participants)
 
           beb(state.participants, {:prepare, {0, state.name, inst}})
-          state = %{state | instances: update_instance(state.instances, inst, :maxBallotNumber, ballotNumber)}
+
+          state = %{
+            state
+            | instances: update_instance(state.instances, inst, :maxBallotNumber, ballotNumber)
+          }
+
           state
 
         {:prepare, {b, senderName, inst}} ->
-          IO.puts(inst)
-          if state.instances[inst].maxBallotNumber > b &&
-               Map.has_key?(
-                 state.instances[inst].prevVotes,
-                 state.instances[inst].maxBallotNumber
-               ) do
-            send_msg(
-              senderName,
-              {:prepared, b,
-               {state.instances[inst].maxBallotNumber,
-                Map.get(state.instances[inst].prevVotes, state.instances[inst].maxBallotNumber)}, inst}
-            )
+          if Map.has_key?(state.instances, inst) do
+            if state.instances[inst].maxBallotNumber > b &&
+                 Map.has_key?(
+                   state.instances[inst].prevVotes,
+                   state.instances[inst].maxBallotNumber
+                 ) do
+              send_msg(
+                senderName,
+                {:prepared, b,
+                 {state.instances[inst].maxBallotNumber,
+                  Map.get(state.instances[inst].prevVotes, state.instances[inst].maxBallotNumber)},
+                 inst}
+              )
+            end
           else
             send_msg(senderName, {:prepared, b, {:none}, inst})
           end
@@ -165,11 +178,7 @@ defmodule Paxos do
                div(length(state.participants), 2) + 1 do
             state = %{
               state
-              | instances:
-                  update_instance(state.instances, inst,
-                    :decided,
-                    true
-                  )
+              | instances: update_instance(state.instances, inst, :decided, true)
             }
 
             send(state.caller, {:decided, state.instances[inst].proposedValue, inst})
@@ -200,7 +209,9 @@ defmodule Paxos do
   end
 
   def update_instance(instances, inst, field, value) do
+    IO.puts("Instances map: #{inspect instances} #{inspect {inst, field, value}}")
     if Map.has_key?(instances, inst) do
+      IO.puts("test")
       Map.put(instances[inst], field, value)
     else
       Map.put(instances, inst, %{
