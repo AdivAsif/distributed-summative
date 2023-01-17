@@ -77,7 +77,7 @@ defmodule Paxos do
                   :preparePhase,
                   Map.put(state.instances[inst].preparePhase, ballot, [
                     vote | Map.get(state.instances[inst].preparePhase, ballot, [])
-                  ])
+                  ]
                 )
           }
 
@@ -245,7 +245,9 @@ defmodule Paxos do
   defp create_ballot(ballot, participants), do: ballot + (length(participants) + 1)
 
   defp update_instance_state(instances, inst, key, value) do
+    IO.puts("#{inspect {inst, key, value}}")
     if Map.has_key?(instances, inst) do
+      IO.puts("true")
       Map.put(instances[inst], key, value)
     else
       Map.put(instances, inst, %{
