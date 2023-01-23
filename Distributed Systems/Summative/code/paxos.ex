@@ -342,32 +342,6 @@ defmodule Paxos do
   # helper methods
   defp create_ballot({number, caller}), do: {number + 1, caller}
 
-  defp update_instance_state(instances, inst, key, value) do
-    if Map.has_key?(instances, inst) do
-      Map.put(instances, inst, Map.put(instances[inst], key, value))
-    else
-      if key == :proposedValue do
-        Map.put(instances, inst, %{
-          proposedValue: value,
-          maxBallot: nil,
-          preparePhase: %{},
-          acceptPhase: %{},
-          votes: %{},
-          decidedValue: nil
-        })
-      else
-        Map.put(instances, inst, %{
-          proposedValue: nil,
-          maxBallot: nil,
-          preparePhase: %{},
-          acceptPhase: %{},
-          votes: %{},
-          decidedValue: nil
-        })
-      end
-    end
-  end
-
   # message sending helpers
   def beb(m, dest), do: for(p <- dest, do: unicast(m, p))
 

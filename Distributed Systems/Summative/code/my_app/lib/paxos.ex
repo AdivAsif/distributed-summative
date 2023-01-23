@@ -16,24 +16,7 @@ defmodule Paxos do
     state = %{
       name: name,
       participants: participants,
-      instances: %{
-        1 => %{
-          proposedValue: nil,
-          maxBallot: nil,
-          preparePhase: %{},
-          acceptPhase: %{},
-          votes: %{},
-          decidedValue: nil
-        },
-        2 => %{
-          proposedValue: nil,
-          maxBallot: nil,
-          preparePhase: %{},
-          acceptPhase: %{},
-          votes: %{},
-          decidedValue: nil
-        }
-      },
+      instances: %{},
       caller: nil
     }
 
@@ -45,16 +28,27 @@ defmodule Paxos do
       receive do
         {:propose, inst, value, caller} ->
           beb({:set_caller, caller}, state.participants)
+          beb({:set_instance_map, inst}, state.participants)
 
-          state = %{
-            state
-            | instances:
-                Map.put(
-                  state.instances,
-                  inst,
-                  Map.put(state.instances[inst], :proposedValue, value)
-                )
-          }
+          state =
+            cond do
+              !Map.has_key?(state.instances, inst) ->
+                %{
+                  state
+                  | instances:
+                      Map.put(state.instances, inst, %{
+                        proposedValue: value,
+                        maxBallot: nil,
+                        preparePhase: %{},
+                        acceptPhase: %{},
+                        votes: %{},
+                        decidedValue: nil
+                      })
+                }
+
+              true ->
+                state
+            end
 
           ballotNumber =
             cond do
@@ -249,6 +243,28 @@ defmodule Paxos do
           state
 
         {:get_decision, inst, caller} ->
+          beb({:set_instance_map, inst}, state.participants)
+
+          state =
+            cond do
+              !Map.has_key?(state.instances, inst) ->
+                %{
+                  state
+                  | instances:
+                      Map.put(state.instances, inst, %{
+                        proposedValue: nil,
+                        maxBallot: nil,
+                        preparePhase: %{},
+                        acceptPhase: %{},
+                        votes: %{},
+                        decidedValue: nil
+                      })
+                }
+
+              true ->
+                state
+            end
+
           if state.instances[inst].decidedValue == nil do
             send(caller, nil)
           else
@@ -266,13 +282,21 @@ defmodule Paxos do
 
           state
 
-        {:set_instance_map, inst, sender} ->
+        {:set_instance_map, inst} ->
           state =
             cond do
-              state.name != sender ->
+              !Map.has_key?(state.instances, inst) ->
                 %{
                   state
-                  | instances: update_instance_state(state.instances, inst, :maxBallot, nil)
+                  | instances:
+                      Map.put(state.instances, inst, %{
+                        proposedValue: nil,
+                        maxBallot: nil,
+                        preparePhase: %{},
+                        acceptPhase: %{},
+                        votes: %{},
+                        decidedValue: nil
+                      })
                 }
 
               true ->
@@ -317,32 +341,6 @@ defmodule Paxos do
 
   # helper methods
   defp create_ballot({number, caller}), do: {number + 1, caller}
-
-  defp update_instance_state(instances, inst, key, value) do
-    if Map.has_key?(instances, inst) do
-      Map.put(instances, inst, Map.put(instances[inst], key, value))
-    else
-      if key == :proposedValue do
-        Map.put(instances, inst, %{
-          proposedValue: value,
-          maxBallot: nil,
-          preparePhase: %{},
-          acceptPhase: %{},
-          votes: %{},
-          decidedValue: nil
-        })
-      else
-        Map.put(instances, inst, %{
-          proposedValue: nil,
-          maxBallot: nil,
-          preparePhase: %{},
-          acceptPhase: %{},
-          votes: %{},
-          decidedValue: nil
-        })
-      end
-    end
-  end
 
   # message sending helpers
   def beb(m, dest), do: for(p <- dest, do: unicast(m, p))
