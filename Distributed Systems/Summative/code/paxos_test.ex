@@ -106,6 +106,8 @@ defmodule PaxosTest do
                 proposers = Enum.zip((fn [h1, h2 | _] -> [h1, h2] end).(participants), [1, 2])
                 proposers = for {k, v} <- proposers, into: %{}, do: {k, v}
                 if proposers[name], do: Paxos.propose(pid, proposers[name], val, 1000)
+                y = List.to_integer((fn [_ | x] -> x end).(Atom.to_charlist((fn [h | _] -> h end).(Map.keys(proposers)))))
+                :rand.seed(:exrop, {y*100+1, y*100+2, y*100+3})
                 inst = Enum.random(1..2)
                 {status, val} = wait_for_decision(pid, inst, 1000)
                 if status != :none, do: IO.puts("#{name}: decided #{inspect val}"),

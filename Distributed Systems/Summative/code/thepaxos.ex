@@ -108,8 +108,6 @@ defmodule Paxos do
                 )
           }
 
-          IO.puts("Promise phase new state: #{inspect state}")
-
           if length(Map.get(state.instances[inst].preparePhase, ballot, [])) ==
                div(length(state.participants), 2) + 1 do
             if Enum.all?(Map.get(state.instances[inst].preparePhase, ballot, []), fn x ->
@@ -146,8 +144,8 @@ defmodule Paxos do
                   v != {:ack}
                 end)
 
-              {maxBallot, maxBallotRes} = Enum.max(promisedValues)
-              beb({:accept, maxBallot, maxBallotRes, state.name, inst}, state.participants)
+              {maxBallotNumber, maxBallotRes} = Enum.max(promisedValues)
+              beb({:accept, maxBallotNumber, maxBallotRes, state.name, inst}, state.participants)
 
               state = %{
                 state
@@ -155,7 +153,7 @@ defmodule Paxos do
                     Map.put(
                       state.instances,
                       inst,
-                      Map.put(state.instances[inst], :maxBallot, maxBallot)
+                      Map.put(state.instances[inst], :maxBallot, maxBallotNumber)
                     )
               }
 
@@ -168,7 +166,7 @@ defmodule Paxos do
                       Map.put(
                         state.instances[inst],
                         :votes,
-                        Map.put(state.instances[inst].votes, maxBallot, maxBallotRes)
+                        Map.put(state.instances[inst].votes, maxBallotNumber, maxBallotRes)
                       )
                     )
               }
@@ -254,7 +252,7 @@ defmodule Paxos do
           if state.instances[inst].decidedValue == nil do
             send(caller, nil)
           else
-            send(caller, {:decided, state.instances[inst].decidedValue})
+            send(caller, {:final_decision, state.instances[inst].decidedValue})
           end
 
           state
@@ -306,7 +304,7 @@ defmodule Paxos do
     send(pid, {:get_decision, inst, self()})
 
     receive do
-      {:decided, v} ->
+      {:final_decision, v} ->
         v
 
       {nil} ->
