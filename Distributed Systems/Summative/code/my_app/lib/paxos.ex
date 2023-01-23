@@ -1,7 +1,6 @@
 defmodule Paxos do
   def start(name, participants) do
     pid = spawn(Paxos, :init, [name, participants])
-    # :global.unregister_name(name)
 
     case :global.re_register_name(name, pid) do
       :yes -> pid
@@ -17,12 +16,24 @@ defmodule Paxos do
     state = %{
       name: name,
       participants: participants,
-      maxBallotNumber: nil,
-      prevVotes: %{},
-      prepareResults: %{},
-      acceptResults: %{},
-      proposedValue: nil,
-      decidedValue: nil,
+      instances: %{
+        1 => %{
+          proposedValue: nil,
+          maxBallot: nil,
+          preparePhase: %{},
+          acceptPhase: %{},
+          votes: %{},
+          decidedValue: nil
+        },
+        2 => %{
+          proposedValue: nil,
+          maxBallot: nil,
+          preparePhase: %{},
+          acceptPhase: %{},
+          votes: %{},
+          decidedValue: nil
+        }
+      },
       caller: nil
     }
 
@@ -32,75 +43,132 @@ defmodule Paxos do
   def run(state) do
     state =
       receive do
-        {:propose, pid, inst, value, t, caller} ->
-          beb(state.participants, {:set_caller, caller})
-          state = %{state | proposedValue: value}
-          # ballotNumber = generate_ballot_number(state.maxBallotNumber, state.participants)
+        {:propose, inst, value, caller} ->
+          beb({:set_caller, caller}, state.participants)
+
+          state = %{
+            state
+            | instances:
+                Map.put(
+                  state.instances,
+                  inst,
+                  Map.put(state.instances[inst], :proposedValue, value)
+                )
+          }
+
           ballotNumber =
             cond do
-              state.maxBallotNumber == nil -> create_ballot({0, state.name})
-              true -> create_ballot(state.maxBallotNumber)
+              state.instances[inst].maxBallot == nil -> create_ballot({0, state.name})
+              true -> create_ballot(state.instances[inst].maxBallot)
             end
 
-          beb(state.participants, {:prepare, {0, state.name}, state.name})
-          state = %{state | maxBallotNumber: ballotNumber}
+          beb({:prepare, {0, state.name}, state.name, inst}, state.participants)
+
+          state = %{
+            state
+            | instances:
+                Map.put(
+                  state.instances,
+                  inst,
+                  Map.put(state.instances[inst], :maxBallot, ballotNumber)
+                )
+          }
+
           state
 
-        {:prepare, b, senderName} ->
-          if state.maxBallotNumber > b && Map.has_key?(state.prevVotes, state.maxBallotNumber) do
-            send_msg(
-              senderName,
-              {:prepared, b,
-               {state.maxBallotNumber, Map.get(state.prevVotes, state.maxBallotNumber)}}
+        {:prepare, ballot, sender, inst} ->
+          if state.instances[inst].maxBallot > ballot &&
+               Map.has_key?(state.instances[inst].votes, state.instances[inst].maxBallot) do
+            unicast(
+              {:promise, ballot,
+               {state.instances[inst].maxBallot,
+                Map.get(state.instances[inst].votes, state.instances[inst].maxBallot)}, inst},
+              sender
             )
           else
-            send_msg(senderName, {:prepared, b, {:none}})
+            unicast({:promise, ballot, {:ack}, inst}, sender)
           end
 
           state
 
-        {:prepared, b, x} ->
+        {:promise, ballot, vote, inst} ->
           state = %{
             state
-            | prepareResults:
-                Map.put(state.prepareResults, b, [x | Map.get(state.prepareResults, b, [])])
+            | instances:
+                Map.put(
+                  state.instances,
+                  inst,
+                  Map.put(
+                    state.instances[inst],
+                    :preparePhase,
+                    Map.put(state.instances[inst].preparePhase, ballot, [
+                      vote | Map.get(state.instances[inst].preparePhase, ballot, [])
+                    ])
+                  )
+                )
           }
 
-          if length(Map.get(state.prepareResults, b, [])) ==
+          if length(Map.get(state.instances[inst].preparePhase, ballot, [])) ==
                div(length(state.participants), 2) + 1 do
-            if List.foldl(Map.get(state.prepareResults, b, []), true, fn elem, acc ->
-                 elem == {:none} && acc
+            if Enum.all?(Map.get(state.instances[inst].preparePhase, ballot, []), fn x ->
+                 x == {:ack}
                end) do
               beb(
-                state.participants,
-                {:accept, state.maxBallotNumber, state.proposedValue, state.name}
+                {:accept, state.instances[inst].maxBallot, state.instances[inst].proposedValue,
+                 state.name, inst},
+                state.participants
               )
 
               state = %{
                 state
-                | prevVotes: Map.put(state.prevVotes, state.maxBallotNumber, state.proposedValue)
+                | instances:
+                    Map.put(
+                      state.instances,
+                      inst,
+                      Map.put(
+                        state.instances[inst],
+                        :votes,
+                        Map.put(
+                          state.instances[inst].votes,
+                          state.instances[inst].maxBallot,
+                          state.instances[inst].proposedValue
+                        )
+                      )
+                    )
               }
 
               state
             else
-              resultList = Enum.filter(Map.get(state.prepareResults, b, []), fn v -> v != {:none} end)
-
-              {maxBallotNumber, maxBallotRes} =
-                List.foldl(resultList, {0, nil}, fn {ballotNumber, ballotRes},
-                                                    {accBallotNumber, accBallotRes} ->
-                  if ballotNumber > accBallotNumber do
-                    {ballotNumber, ballotRes}
-                  else
-                    {accBallotNumber, accBallotRes}
-                  end
+              promisedValues =
+                Enum.filter(Map.get(state.instances[inst].preparePhase, ballot, []), fn v ->
+                  v != {:ack}
                 end)
 
-              beb(state.participants, {:accept, maxBallotNumber, maxBallotRes, state.name})
+              {maxBallotNumber, maxBallotRes} = Enum.max(promisedValues)
+              beb({:accept, maxBallotNumber, maxBallotRes, state.name, inst}, state.participants)
 
               state = %{
                 state
-                | maxBallotNumber: maxBallotNumber,
-                  prevVotes: Map.put(state.prevVotes, maxBallotNumber, maxBallotRes)
+                | instances:
+                    Map.put(
+                      state.instances,
+                      inst,
+                      Map.put(state.instances[inst], :maxBallot, maxBallotNumber)
+                    )
+              }
+
+              state = %{
+                state
+                | instances:
+                    Map.put(
+                      state.instances,
+                      inst,
+                      Map.put(
+                        state.instances[inst],
+                        :votes,
+                        Map.put(state.instances[inst].votes, maxBallotNumber, maxBallotRes)
+                      )
+                    )
               }
 
               state
@@ -109,63 +177,108 @@ defmodule Paxos do
             state
           end
 
-        {:accept, ballotNumber, result, sender} ->
-          if state.maxBallotNumber <= ballotNumber do
+        {:accept, ballot, result, sender, inst} ->
+          if state.instances[inst].maxBallot <= ballot do
             state = %{
               state
-              | maxBallotNumber: ballotNumber,
-                prevVotes: Map.put(state.prevVotes, ballotNumber, result)
+              | instances:
+                  Map.put(
+                    state.instances,
+                    inst,
+                    Map.put(
+                      state.instances[inst],
+                      :votes,
+                      Map.put(state.instances[inst].votes, ballot, result)
+                    )
+                  )
             }
 
-            send_msg(sender, {:accepted, ballotNumber})
+            state = %{
+              state
+              | instances:
+                  Map.put(
+                    state.instances,
+                    inst,
+                    Map.put(state.instances[inst], :maxBallot, ballot)
+                  )
+            }
+
+            unicast({:accepted, ballot, inst}, sender)
             state
           else
             state
           end
 
-        {:accepted, ballotNumber} ->
+        {:accepted, ballot, inst} ->
           state = %{
             state
-            | acceptResults:
+            | instances:
                 Map.put(
-                  state.acceptResults,
-                  ballotNumber,
-                  Map.get(state.acceptResults, ballotNumber, 0) + 1
+                  state.instances,
+                  inst,
+                  Map.put(
+                    state.instances[inst],
+                    :acceptPhase,
+                    Map.put(
+                      state.instances[inst].acceptPhase,
+                      ballot,
+                      Map.get(state.instances[inst].acceptPhase, ballot, 0) + 1
+                    )
+                  )
                 )
           }
 
-          IO.puts("Accept results in the accepted phase: #{inspect state.acceptResults}")
-          if Map.get(state.acceptResults, ballotNumber, 0) ==
+          if Map.get(state.instances[inst].acceptPhase, ballot, 0) ==
                div(length(state.participants), 2) + 1 do
-            beb(state.participants, {:decided, Map.get(state.prevVotes, ballotNumber)})
+            beb(
+              {:decided, inst, Map.get(state.instances[inst].votes, ballot)},
+              state.participants
+            )
           end
 
           state
 
-        {:decided, v} ->
-          state = %{state | decidedValue: v}
-          send(state.caller, {:decision, v})
+        {:decided, inst, v} ->
+          state = %{
+            state
+            | instances:
+                Map.put(state.instances, inst, Map.put(state.instances[inst], :decidedValue, v))
+          }
+
+          send(state.caller, {:decided, state.instances[inst].decidedValue})
           state
 
-        {:get_decision, pid, inst, t, caller} ->
-          if state.decidedValue == nil do
+        {:get_decision, inst, caller} ->
+          if state.instances[inst].decidedValue == nil do
             send(caller, nil)
           else
-            IO.puts("#{inspect(state.prevVotes)}")
-            send(caller, {:decided, state.decidedValue})
+            send(caller, {:final_decision, state.instances[inst].decidedValue})
           end
 
           state
 
         {:set_caller, caller} ->
-          state = %{state | caller: caller}
+          state =
+            cond do
+              state.caller == nil -> %{state | caller: caller}
+              true -> state
+            end
+
           state
 
-        {:print_state} ->
-          IO.puts("#{inspect(state)}")
-          state
+        {:set_instance_map, inst, sender} ->
+          state =
+            cond do
+              state.name != sender ->
+                %{
+                  state
+                  | instances: update_instance_state(state.instances, inst, :maxBallot, nil)
+                }
 
-        _ ->
+              true ->
+                state
+            end
+
           state
       end
 
@@ -173,7 +286,7 @@ defmodule Paxos do
   end
 
   def propose(pid, inst, value, t) do
-    send(pid, {:propose, pid, inst, value, t, self()})
+    send(pid, {:propose, inst, value, self()})
 
     receive do
       {:decision, v} ->
@@ -188,13 +301,13 @@ defmodule Paxos do
   end
 
   def get_decision(pid, inst, t) do
-    send(pid, {:get_decision, pid, inst, t, self()})
+    send(pid, {:get_decision, inst, self()})
 
     receive do
-      {:decided, v} ->
+      {:final_decision, v} ->
         v
 
-      nil ->
+      {nil} ->
         nil
     after
       t ->
@@ -202,22 +315,42 @@ defmodule Paxos do
     end
   end
 
+  # helper methods
   defp create_ballot({number, caller}), do: {number + 1, caller}
 
-  defp generate_ballot_number(maxBallotNumber, participants) do
-    maxBallotNumber + (length(participants) + 1)
-  end
-
-  defp beb(participants, msg) do
-    for p <- participants do
-      send_msg(p, msg)
+  defp update_instance_state(instances, inst, key, value) do
+    if Map.has_key?(instances, inst) do
+      Map.put(instances, inst, Map.put(instances[inst], key, value))
+    else
+      if key == :proposedValue do
+        Map.put(instances, inst, %{
+          proposedValue: value,
+          maxBallot: nil,
+          preparePhase: %{},
+          acceptPhase: %{},
+          votes: %{},
+          decidedValue: nil
+        })
+      else
+        Map.put(instances, inst, %{
+          proposedValue: nil,
+          maxBallot: nil,
+          preparePhase: %{},
+          acceptPhase: %{},
+          votes: %{},
+          decidedValue: nil
+        })
+      end
     end
   end
 
-  defp send_msg(name, msg) do
-    case :global.whereis_name(name) do
-      :undefined -> nil
-      pid -> send(pid, msg)
+  # message sending helpers
+  def beb(m, dest), do: for(p <- dest, do: unicast(m, p))
+
+  defp unicast(m, p) do
+    case :global.whereis_name(p) do
+      pid when is_pid(pid) -> send(pid, m)
+      :undefined -> :ok
     end
   end
 end
