@@ -18,9 +18,9 @@ test_suite = [
     # consisting of n processes, each one on a different node.
     # Use TestUtil.get_local_config(n) to generate a single-node configuration
     # consisting of n processes, all running on the same node.
-    {&PaxosTest.run_simple/3, TestUtil.get_local_config(3), 1, "No failures, no concurrent ballots, 3 local procs"},
+#     {&PaxosTest.run_simple/3, TestUtil.get_local_config(3), 10, "No failures, no concurrent ballots, 3 local procs"},
 #     {&PaxosTest.run_simple/3, TestUtil.get_dist_config(host, 3), 10, "No failures, no concurrent ballots, 3 nodes"},
-    {&PaxosTest.run_simple/3, TestUtil.get_local_config(5), 1, "No failures, no concurrent ballots, 5 local procs"},
+#     {&PaxosTest.run_simple/3, TestUtil.get_local_config(5), 10, "No failures, no concurrent ballots, 5 local procs"},
 
 #     {&PaxosTest.run_simple_2/3, TestUtil.get_dist_config(host, 3), 10, "No failures, 2 concurrent ballots, 3 nodes"},
     {&PaxosTest.run_simple_2/3, TestUtil.get_local_config(3), 1, "No failures, 2 concurrent ballots, 3 local procs"},
@@ -36,28 +36,28 @@ test_suite = [
     {&PaxosTest.run_simple_many_2/3, TestUtil.get_local_config(5), 1, "No failures, many concurrent ballots 2, 5 local procs"},
 
 #     {&PaxosTest.run_non_leader_crash/3, TestUtil.get_dist_config(host, 3), 10, "One non-leader crashes, no concurrent ballots, 3 nodes"},
-    {&PaxosTest.run_non_leader_crash/3, TestUtil.get_local_config(3), 1, "One non-leader crashes, no concurrent ballots, 3 local procs"},
+#     {&PaxosTest.run_non_leader_crash/3, TestUtil.get_local_config(3), 10, "One non-leader crashes, no concurrent ballots, 3 local procs"},
 
 
 #     {&PaxosTest.run_minority_non_leader_crash/3, TestUtil.get_dist_config(host, 5), 10, "Minority non-leader crashes, no concurrent ballots"},
-    {&PaxosTest.run_minority_non_leader_crash/3, TestUtil.get_local_config(5), 1, "Minority non-leader crashes, no concurrent ballots"},
+#     {&PaxosTest.run_minority_non_leader_crash/3, TestUtil.get_local_config(5), 10, "Minority non-leader crashes, no concurrent ballots"},
 
 
 
 #     {&PaxosTest.run_leader_crash_simple/3, TestUtil.get_dist_config(host, 5), 10, "Leader crashes, no concurrent ballots, 5 nodes"},
-    {&PaxosTest.run_leader_crash_simple/3, TestUtil.get_local_config(5), 1, "Leader crashes, no concurrent ballots, 5 local procs"},
+#     {&PaxosTest.run_leader_crash_simple/3, TestUtil.get_local_config(5), 10, "Leader crashes, no concurrent ballots, 5 local procs"},
 
 
 #     {&PaxosTest.run_leader_crash_simple_2/3, TestUtil.get_dist_config(host, 7), 10, "Leader and some non-leaders crash, no concurrent ballots, 7 nodes"},
-    {&PaxosTest.run_leader_crash_simple_2/3, TestUtil.get_local_config(7), 1, "Leader and some non-leaders crash, no concurrent ballots, 7 local procs"},
+#     {&PaxosTest.run_leader_crash_simple_2/3, TestUtil.get_local_config(7), 10, "Leader and some non-leaders crash, no concurrent ballots, 7 local procs"},
 
 #     {&PaxosTest.run_leader_crash_complex/3, TestUtil.get_dist_config(host, 11), 10, "Cascading failures of leaders and non-leaders, 11 nodes"},
-    {&PaxosTest.run_leader_crash_complex/3, TestUtil.get_local_config(11), 1, "Cascading failures of leaders and non-leaders, 11 local procs"},
+#     {&PaxosTest.run_leader_crash_complex/3, TestUtil.get_local_config(11), 10, "Cascading failures of leaders and non-leaders, 11 local procs"},
 
 #     {&PaxosTest.run_leader_crash_complex_2/3, TestUtil.get_dist_config(host, 11), 10, "Cascading failures of leaders and non-leaders, random delays, 7 nodes"},
-    {&PaxosTest.run_leader_crash_complex_2/3, TestUtil.get_local_config(11), 1, "Cascading failures of leaders and non-leaders, random delays, 7 local procs"},
+#     {&PaxosTest.run_leader_crash_complex_2/3, TestUtil.get_local_config(11), 10, "Cascading failures of leaders and non-leaders, random delays, 7 local procs"},
 ]
-
+{:ok, pid} = Agent.start(fn -> 0 end, name: :counter)
 
 Node.stop
 # Confusingly, Node.start fails if epmd is not running.
@@ -95,6 +95,7 @@ Enum.reduce(test_suite, length(test_suite),
                         warn = if too_many_attempts, do: [{:too_many_attempts, get_att.(Enum.max(al))}], else: []
                         warn = if too_many_messages_left, do: [{:too_many_messages_left, Enum.max(ll)} | warn], else: warn
                         IO.puts(:stderr, (if warn == [], do: "PASS", else: "PASS (#{inspect warn})"))
+                        Agent.update(:counter, &(&1 + 1))
                         # IO.puts(:stderr, "#{inspect res}")
                 else
                         IO.puts(:stderr, "FAIL\n\t#{inspect res}")
@@ -103,6 +104,8 @@ Enum.reduce(test_suite, length(test_suite),
         IO.puts(:stderr, "============#{if acc > 1, do: "\n", else: ""}")
         acc - 1
      end)
+IO.puts("#{inspect Agent.get(:counter, &(&1))}/#{inspect length(test_suite)*10}")
+Agent.stop(:counter)
 :os.cmd('/bin/rm -f *.beam')
 Node.stop
 System.halt

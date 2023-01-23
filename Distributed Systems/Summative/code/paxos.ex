@@ -17,7 +17,7 @@ defmodule Paxos do
     state = %{
       name: name,
       participants: participants,
-      maxBallotNumber: 0,
+      maxBallotNumber: nil,
       prevVotes: %{},
       prepareResults: %{},
       acceptResults: %{},
@@ -35,12 +35,20 @@ defmodule Paxos do
         {:propose, pid, inst, value, t, caller} ->
           beb(state.participants, {:set_caller, caller})
           state = %{state | proposedValue: value}
-          ballotNumber = generate_ballot_number(state.maxBallotNumber, state.participants)
-          beb(state.participants, {:prepare, {0, state.name}})
+
+          # ballotNumber = generate_ballot_number(state.maxBallotNumber, state.participants)
+          ballotNumber =
+            cond do
+              state.maxBallotNumber == nil -> create_ballot({0, state.name})
+              true -> create_ballot(state.maxBallotNumber)
+            end
+
+          beb(state.participants, {:prepare, {0, state.name}, state.name})
           state = %{state | maxBallotNumber: ballotNumber}
+
           state
 
-        {:prepare, {b, senderName}} ->
+        {:prepare, b, senderName} ->
           if state.maxBallotNumber > b && Map.has_key?(state.prevVotes, state.maxBallotNumber) do
             send_msg(
               senderName,
@@ -60,11 +68,12 @@ defmodule Paxos do
                 Map.put(state.prepareResults, b, [x | Map.get(state.prepareResults, b, [])])
           }
 
-          IO.puts("#{inspect state}")
+          IO.puts("Promise phase new state: #{inspect state}")
+
           if length(Map.get(state.prepareResults, b, [])) ==
                div(length(state.participants), 2) + 1 do
-            if List.foldl(Map.get(state.prepareResults, b, []), true, fn elem, acc ->
-                 elem == {:none} && acc
+            if Enum.all?(Map.get(state.prepareResults, b, []), fn elem ->
+                 elem == {:none}
                end) do
               beb(
                 state.participants,
@@ -78,7 +87,8 @@ defmodule Paxos do
 
               state
             else
-              resultList = delete_all_occurences(Map.get(state.prepareResults, b, []), {:none})
+              resultList =
+                Enum.filter(Map.get(state.prepareResults, b, []), fn v -> v != {:none} end)
 
               {maxBallotNumber, maxBallotRes} =
                 List.foldl(resultList, {0, nil}, fn {ballotNumber, ballotRes},
@@ -137,22 +147,26 @@ defmodule Paxos do
           state
 
         {:decided, v} ->
-          send(state.caller, {:decision, v})
           state = %{state | decidedValue: v}
+          send(state.caller, {:decision, v})
           state
 
         {:get_decision, pid, inst, t, caller} ->
           if state.decidedValue == nil do
             send(caller, nil)
           else
-            IO.puts("#{inspect(state.prevVotes)}")
             send(caller, {:decided, state.decidedValue})
           end
 
           state
 
         {:set_caller, caller} ->
-          state = %{state | caller: caller}
+          state =
+            cond do
+              state.caller == nil -> %{state | caller: caller}
+              true -> state
+            end
+
           state
 
         {:print_state} ->
@@ -196,6 +210,8 @@ defmodule Paxos do
     end
   end
 
+  defp create_ballot({number, caller}), do: {number + 1, caller}
+
   defp generate_ballot_number(maxBallotNumber, participants) do
     maxBallotNumber + (length(participants) + 1)
   end
@@ -211,21 +227,5 @@ defmodule Paxos do
       :undefined -> nil
       pid -> send(pid, msg)
     end
-  end
-
-  defp delete_all_occurences(list, element) do
-    _delete_all_occurences(list, element, [])
-  end
-
-  defp _delete_all_occurences([head | tail], element, list) when head === element do
-    _delete_all_occurences(tail, element, list)
-  end
-
-  defp _delete_all_occurences([head | tail], element, list) do
-    _delete_all_occurences(tail, element, [head | list])
-  end
-
-  defp _delete_all_occurences([], _element, list) do
-    list
   end
 end

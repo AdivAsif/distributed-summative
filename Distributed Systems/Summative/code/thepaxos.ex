@@ -16,7 +16,24 @@ defmodule Paxos do
     state = %{
       name: name,
       participants: participants,
-      instances: %{},
+      instances: %{
+        1 => %{
+          proposedValue: nil,
+          maxBallot: nil,
+          preparePhase: %{},
+          acceptPhase: %{},
+          votes: %{},
+          decidedValue: nil
+        },
+        2 => %{
+          proposedValue: nil,
+          maxBallot: nil,
+          preparePhase: %{},
+          acceptPhase: %{},
+          votes: %{},
+          decidedValue: nil
+        }
+      },
       caller: nil
     }
 
@@ -31,62 +48,72 @@ defmodule Paxos do
 
           state = %{
             state
-            | instances: update_instance_state(state.instances, inst, :proposedValue, value)
+            | instances:
+                Map.put(
+                  state.instances,
+                  inst,
+                  Map.put(state.instances[inst], :proposedValue, value)
+                )
           }
 
-          ballot = create_ballot(state.instances[inst].maxBallot, state.participants)
-          beb({:prepare, {0, state.name, inst}}, state.participants)
+          ballotNumber =
+            cond do
+              state.instances[inst].maxBallot == nil -> create_ballot({0, state.name})
+              true -> create_ballot(state.instances[inst].maxBallot)
+            end
+
+          beb({:prepare, {0, state.name}, state.name, inst}, state.participants)
 
           state = %{
             state
-            | instances: update_instance_state(state.instances, inst, :maxBallot, ballot)
+            | instances:
+                Map.put(
+                  state.instances,
+                  inst,
+                  Map.put(state.instances[inst], :maxBallot, ballotNumber)
+                )
           }
 
           state
 
-        {:prepare, {ballot, sender, inst}} ->
-          state = %{
-            state
-            | instances: update_instance_state(state.instances, inst, :maxBallot, ballot)
-          }
-
-          IO.puts("#{inspect(state.instances)} #{state.name}")
-          IO.puts("#{inspect(state.instances[inst])}")
-
+        {:prepare, ballot, sender, inst} ->
           if state.instances[inst].maxBallot > ballot &&
-               Map.has_key?(state.instances[inst].prevVotes, state.instances[inst].maxBallot) do
+               Map.has_key?(state.instances[inst].votes, state.instances[inst].maxBallot) do
             unicast(
-              {:prepared, ballot,
+              {:promise, ballot,
                {state.instances[inst].maxBallot,
                 Map.get(state.instances[inst].votes, state.instances[inst].maxBallot)}, inst},
               sender
             )
           else
-            unicast({:prepared, ballot, {:none}, inst}, sender)
+            unicast({:promise, ballot, {:ack}, inst}, sender)
           end
 
           state
 
-        {:prepared, ballot, vote, inst} ->
+        {:promise, ballot, vote, inst} ->
           state = %{
             state
             | instances:
-                update_instance_state(
+                Map.put(
                   state.instances,
                   inst,
-                  :preparePhase,
-                  Map.put(state.instances[inst].preparePhase, ballot, [
-                    vote | Map.get(state.instances[inst].preparePhase, ballot, [])
-                  ]
+                  Map.put(
+                    state.instances[inst],
+                    :preparePhase,
+                    Map.put(state.instances[inst].preparePhase, ballot, [
+                      vote | Map.get(state.instances[inst].preparePhase, ballot, [])
+                    ])
+                  )
                 )
           }
 
-          IO.puts("#{inspect state.instances[inst]}")
+          IO.puts("Promise phase new state: #{inspect state}")
+
           if length(Map.get(state.instances[inst].preparePhase, ballot, [])) ==
                div(length(state.participants), 2) + 1 do
-            if List.foldl(Map.get(state.instances[inst].preparePhase, ballot, []), true, fn elem,
-                                                                                            acc ->
-                 elem == {:none} && acc
+            if Enum.all?(Map.get(state.instances[inst].preparePhase, ballot, []), fn x ->
+                 x == {:ack}
                end) do
               beb(
                 {:accept, state.instances[inst].maxBallot, state.instances[inst].proposedValue,
@@ -97,42 +124,53 @@ defmodule Paxos do
               state = %{
                 state
                 | instances:
-                    update_instance_state(
+                    Map.put(
                       state.instances,
                       inst,
-                      :votes,
                       Map.put(
-                        state.instances[inst].votes,
-                        state.instances[inst].maxBallot,
-                        state.instances[inst].proposedValue
+                        state.instances[inst],
+                        :votes,
+                        Map.put(
+                          state.instances[inst].votes,
+                          state.instances[inst].maxBallot,
+                          state.instances[inst].proposedValue
+                        )
                       )
                     )
               }
 
               state
             else
-              preparedList =
-                delete_all_occurences(
-                  Map.get(state.instances[inst].preparePhase, ballot, []),
-                  {:none}
-                )
-
-              {maxBallot, maxBallotRes} =
-                List.foldl(preparedList, {0, nil}, fn {ballotNumber, ballotRes},
-                                                      {accBallotNumber, accBallotRes} ->
-                  if ballotNumber > accBallotNumber do
-                    {ballotNumber, ballotRes}
-                  else
-                    {accBallotNumber, accBallotRes}
-                  end
+              promisedValues =
+                Enum.filter(Map.get(state.instances[inst].preparePhase, ballot, []), fn v ->
+                  v != {:ack}
                 end)
 
+              {maxBallot, maxBallotRes} = Enum.max(promisedValues)
               beb({:accept, maxBallot, maxBallotRes, state.name, inst}, state.participants)
 
               state = %{
                 state
                 | instances:
-                    update_instance_state(state.instances, inst, :maxBallot, maxBallotRes)
+                    Map.put(
+                      state.instances,
+                      inst,
+                      Map.put(state.instances[inst], :maxBallot, maxBallot)
+                    )
+              }
+
+              state = %{
+                state
+                | instances:
+                    Map.put(
+                      state.instances,
+                      inst,
+                      Map.put(
+                        state.instances[inst],
+                        :votes,
+                        Map.put(state.instances[inst].votes, maxBallot, maxBallotRes)
+                      )
+                    )
               }
 
               state
@@ -146,11 +184,24 @@ defmodule Paxos do
             state = %{
               state
               | instances:
-                  update_instance_state(
+                  Map.put(
                     state.instances,
                     inst,
-                    :votes,
-                    Map.put(state.instances[inst].votes, ballot, result)
+                    Map.put(
+                      state.instances[inst],
+                      :votes,
+                      Map.put(state.instances[inst].votes, ballot, result)
+                    )
+                  )
+            }
+
+            state = %{
+              state
+              | instances:
+                  Map.put(
+                    state.instances,
+                    inst,
+                    Map.put(state.instances[inst], :maxBallot, ballot)
                   )
             }
 
@@ -164,17 +215,22 @@ defmodule Paxos do
           state = %{
             state
             | instances:
-                update_instance_state(
+                Map.put(
                   state.instances,
                   inst,
-                  :acceptPhase,
-                  Map.put(state.instances[inst].acceptPhase, ballot, [
-                    inst | Map.get(state.instances[inst].acceptPhase, ballot, [])
-                  ])
+                  Map.put(
+                    state.instances[inst],
+                    :acceptPhase,
+                    Map.put(
+                      state.instances[inst].acceptPhase,
+                      ballot,
+                      Map.get(state.instances[inst].acceptPhase, ballot, 0) + 1
+                    )
+                  )
                 )
           }
 
-          if length(Map.get(state.instances[inst].acceptPhase, ballot, [])) ==
+          if Map.get(state.instances[inst].acceptPhase, ballot, 0) ==
                div(length(state.participants), 2) + 1 do
             beb(
               {:decided, inst, Map.get(state.instances[inst].votes, ballot)},
@@ -185,13 +241,13 @@ defmodule Paxos do
           state
 
         {:decided, inst, v} ->
-          send(state.caller, {:decided, v})
-
           state = %{
             state
-            | instances: update_instance_state(state.instances, inst, :decidedValue, v)
+            | instances:
+                Map.put(state.instances, inst, Map.put(state.instances[inst], :decidedValue, v))
           }
 
+          send(state.caller, {:decided, state.instances[inst].decidedValue})
           state
 
         {:get_decision, inst, caller} ->
@@ -204,7 +260,27 @@ defmodule Paxos do
           state
 
         {:set_caller, caller} ->
-          state = %{state | caller: caller}
+          state =
+            cond do
+              state.caller == nil -> %{state | caller: caller}
+              true -> state
+            end
+
+          state
+
+        {:set_instance_map, inst, sender} ->
+          state =
+            cond do
+              state.name != sender ->
+                %{
+                  state
+                  | instances: update_instance_state(state.instances, inst, :maxBallot, nil)
+                }
+
+              true ->
+                state
+            end
+
           state
       end
 
@@ -242,34 +318,33 @@ defmodule Paxos do
   end
 
   # helper methods
-  defp create_ballot(ballot, participants), do: ballot + (length(participants) + 1)
+  defp create_ballot({number, caller}), do: {number + 1, caller}
 
   defp update_instance_state(instances, inst, key, value) do
-    IO.puts("#{inspect {inst, key, value}}")
     if Map.has_key?(instances, inst) do
-      IO.puts("true")
-      Map.put(instances[inst], key, value)
+      Map.put(instances, inst, Map.put(instances[inst], key, value))
     else
-      Map.put(instances, inst, %{
-        proposedValue: nil,
-        maxBallot: 0,
-        preparePhase: %{},
-        acceptPhase: %{},
-        votes: %{},
-        decidedValue: nil
-      })
+      if key == :proposedValue do
+        Map.put(instances, inst, %{
+          proposedValue: value,
+          maxBallot: nil,
+          preparePhase: %{},
+          acceptPhase: %{},
+          votes: %{},
+          decidedValue: nil
+        })
+      else
+        Map.put(instances, inst, %{
+          proposedValue: nil,
+          maxBallot: nil,
+          preparePhase: %{},
+          acceptPhase: %{},
+          votes: %{},
+          decidedValue: nil
+        })
+      end
     end
   end
-
-  defp delete_all_occurences(list, element), do: delete_all_occurences(list, element, [])
-
-  defp delete_all_occurences([head | tail], element, list) when head === element,
-    do: delete_all_occurences(tail, element, list)
-
-  defp delete_all_occurences([head | tail], element, list),
-    do: delete_all_occurences(tail, element, [head | list])
-
-  defp delete_all_occurences([], _element, list), do: list
 
   # message sending helpers
   def beb(m, dest), do: for(p <- dest, do: unicast(m, p))

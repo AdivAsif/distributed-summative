@@ -48,4 +48,8 @@ defmodule Paxos do
         {:decision, decide}
     end
   end
+
+  def gen_ballot({number, caller}) do
+    {number + 1, caller}
+  end
 end

@@ -6,8 +6,6 @@ defmodule MyAppWeb.Router do
     plug :fetch_session
     plug :fetch_live_flash
     plug :put_root_layout, {MyAppWeb.LayoutView, :root}
-    plug :protect_from_forgery
-    plug :put_secure_browser_headers
   end
 
   pipeline :api do
@@ -18,6 +16,8 @@ defmodule MyAppWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :index
+    post "/occupy", ReservationController, :occupy
+    get "/get_seats", ReservationController, :get_seats
   end
 
   # Other scopes may use custom stacks.

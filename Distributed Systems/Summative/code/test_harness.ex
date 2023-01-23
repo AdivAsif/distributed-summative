@@ -12,7 +12,7 @@ defmodule TestHarness do
     defp wait_for_set(_, n, q, _, false) when n < q, do: :done
     defp wait_for_set(procs, _, q, name, _) do
         Process.sleep(10)
-        s = Enum.reduce(procs, MapSet.new, 
+        s = Enum.reduce(procs, MapSet.new,
             fn p, s -> if :global.whereis_name(p) != :undefined, do: MapSet.put(s, p), else: s end)
         (fn d -> wait_for_set(d, MapSet.size(d), q, name, name in d) end).(MapSet.difference(procs, s))
     end
@@ -38,7 +38,7 @@ defmodule TestHarness do
     def get_os_pid(node) do
         Process.sleep(1000)
         # Node.spawn(node, TestHarness, :send_back_os_pid, [self()])
-        (fn pid -> Node.spawn(node, 
+        (fn pid -> Node.spawn(node,
             fn -> send(pid, {:os_pid, :os.getpid}) end) end).(self())
         receive do
             {:os_pid, os_pid} -> os_pid
@@ -55,8 +55,8 @@ defmodule TestHarness do
             # wait_until_up(node)
             get_os_pid(node)
         end
-        
-        pids = (fn participants -> 
+
+        pids = (fn participants ->
             for {name, {node, param}} <- config do
                 case node do
                     :local -> Node.spawn(Node.self, fn -> func.(name, participants, param) end)
@@ -74,7 +74,7 @@ defmodule TestHarness do
         for p <- procs, do: send(p, msg)
     end
 
-    defp sync(msg, n) do 
+    defp sync(msg, n) do
         for _ <- 1..n do
             receive do
                 ^msg -> :ok
@@ -83,8 +83,8 @@ defmodule TestHarness do
     end
 
     defp sync_and_collect(m_type, n) do
-        Enum.reduce(1..n, [], 
-            fn _, res -> 
+        Enum.reduce(1..n, [],
+            fn _, res ->
                 [h | t] = receive do
                     msg -> Tuple.to_list(msg)
                 end
