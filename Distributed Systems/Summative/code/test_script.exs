@@ -1,6 +1,6 @@
 # Replace with your own implementation source files
 # IEx.Helpers.c "beb.ex", "."
-IEx.Helpers.c "paxos.ex", "."
+IEx.Helpers.c "thepaxos.ex", "."
 
 # Do not modify the following ##########
 IEx.Helpers.c "test_harness.ex", "."

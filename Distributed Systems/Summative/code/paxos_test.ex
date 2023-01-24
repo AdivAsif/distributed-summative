@@ -459,7 +459,7 @@ defmodule PaxosTest do
                     IO.puts "kill: leaders, followers = #{inspect leaders}, #{inspect followers}"
 
                     if name in leaders do
-                        Paxos.propose(pid, 1, val, 10000)
+                        Paxos.propose(pid, 1, val, 1000)
                         Process.sleep(Enum.random(1..5))
                         Process.exit(pid, :kill)
                     end
@@ -475,7 +475,7 @@ defmodule PaxosTest do
 
                     if hd(spare) == name do
                         Process.sleep(10)
-                        Paxos.propose(pid, 1, val, 10000)
+                        Paxos.propose(pid, 1, val, 1000)
                     end
 
                     if name in spare do
@@ -484,11 +484,11 @@ defmodule PaxosTest do
                             Process.sleep(Enum.random(1..5))
                             :erlang.resume_process(pid)
                             leader = hd(Enum.reverse spare)
-                            if name == leader, do: Paxos.propose(pid, 1, val, 10000)
+                            if name == leader, do: Paxos.propose(pid, 1, val, 1000)
                         end
                         leader = hd(spare)
                         if name == leader, do: propose_until_commit(pid, 1, val)
-                        {status, val} = wait_for_decision(pid, 1, 50000)
+                        {status, val} = wait_for_decision(pid, 1, 1000)
                         if status != :none, do: IO.puts("#{name}: decided #{inspect val}"),
                             else: IO.puts("#{name}: No decision after 50 seconds")
                         {status, val, 10, spare}
