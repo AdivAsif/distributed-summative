@@ -16,7 +16,24 @@ defmodule Paxos do
     state = %{
       name: name,
       participants: participants,
-      instances: %{},
+      instances: %{
+        1 => %{
+          proposedValue: nil,
+          maxBallot: nil,
+          preparePhase: %{},
+          acceptPhase: %{},
+          votes: %{},
+          decidedValue: nil
+        },
+        2 => %{
+          proposedValue: nil,
+          maxBallot: nil,
+          preparePhase: %{},
+          acceptPhase: %{},
+          votes: %{},
+          decidedValue: nil
+        }
+      },
       caller: nil
     }
 
@@ -28,27 +45,16 @@ defmodule Paxos do
       receive do
         {:propose, inst, value, caller} ->
           beb({:set_caller, caller}, state.participants)
-          beb({:set_instance_map, inst}, state.participants)
 
-          state =
-            cond do
-              !Map.has_key?(state.instances, inst) ->
-                %{
-                  state
-                  | instances:
-                      Map.put(state.instances, inst, %{
-                        proposedValue: value,
-                        maxBallot: nil,
-                        preparePhase: %{},
-                        acceptPhase: %{},
-                        votes: %{},
-                        decidedValue: nil
-                      })
-                }
-
-              true ->
-                state
-            end
+          state = %{
+            state
+            | instances:
+                Map.put(
+                  state.instances,
+                  inst,
+                  Map.put(state.instances[inst], :proposedValue, value)
+                )
+          }
 
           ballotNumber =
             cond do
@@ -243,28 +249,6 @@ defmodule Paxos do
           state
 
         {:get_decision, inst, caller} ->
-          beb({:set_instance_map, inst}, state.participants)
-
-          state =
-            cond do
-              !Map.has_key?(state.instances, inst) ->
-                %{
-                  state
-                  | instances:
-                      Map.put(state.instances, inst, %{
-                        proposedValue: nil,
-                        maxBallot: nil,
-                        preparePhase: %{},
-                        acceptPhase: %{},
-                        votes: %{},
-                        decidedValue: nil
-                      })
-                }
-
-              true ->
-                state
-            end
-
           if state.instances[inst].decidedValue == nil do
             send(caller, nil)
           else
@@ -278,29 +262,6 @@ defmodule Paxos do
             cond do
               state.caller == nil -> %{state | caller: caller}
               true -> state
-            end
-
-          state
-
-        {:set_instance_map, inst} ->
-          state =
-            cond do
-              !Map.has_key?(state.instances, inst) ->
-                %{
-                  state
-                  | instances:
-                      Map.put(state.instances, inst, %{
-                        proposedValue: nil,
-                        maxBallot: nil,
-                        preparePhase: %{},
-                        acceptPhase: %{},
-                        votes: %{},
-                        decidedValue: nil
-                      })
-                }
-
-              true ->
-                state
             end
 
           state

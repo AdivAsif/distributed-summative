@@ -46,6 +46,18 @@ defmodule Paxos do
                       })
                 }
 
+              Map.has_key?(state.instances, inst) &&
+                  Map.get(state.instances[inst], :proposedValue) == nil ->
+                %{
+                  state
+                  | instances:
+                      Map.put(
+                        state.instances,
+                        inst,
+                        Map.put(state.instances[inst], :proposedValue, value)
+                      )
+                }
+
               true ->
                 state
             end
