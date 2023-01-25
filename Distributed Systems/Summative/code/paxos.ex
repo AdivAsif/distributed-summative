@@ -44,7 +44,7 @@ defmodule Paxos do
     state =
       receive do
         {:propose, inst, value, caller} ->
-          beb({:set_caller, caller}, state.participants)
+          state = %{state | caller: caller}
 
           state = %{
             state
@@ -144,14 +144,14 @@ defmodule Paxos do
                   v != {:ack}
                 end)
 
-              {maxBallotNumber, maxBallotRes} = Enum.max(promisedValues)
+              {maxBallotNumber, maxBallotVote} = Enum.max(promisedValues)
 
               if ballot < maxBallotNumber do
-                send(state.caller, {:abort})
+                if state.caller != nil, do: send(state.caller, {:abort})
                 state
               else
                 beb(
-                  {:accept, maxBallotNumber, maxBallotRes, state.name, inst},
+                  {:accept, maxBallotNumber, maxBallotVote, state.name, inst},
                   state.participants
                 )
 
@@ -174,7 +174,7 @@ defmodule Paxos do
                         Map.put(
                           state.instances[inst],
                           :votes,
-                          Map.put(state.instances[inst].votes, maxBallotNumber, maxBallotRes)
+                          Map.put(state.instances[inst].votes, maxBallotNumber, maxBallotVote)
                         )
                       )
                 }
@@ -254,7 +254,9 @@ defmodule Paxos do
                 Map.put(state.instances, inst, Map.put(state.instances[inst], :decidedValue, v))
           }
 
-          send(state.caller, {:decided, state.instances[inst].decidedValue})
+          if state.caller != nil,
+            do: send(state.caller, {:decided, state.instances[inst].decidedValue})
+
           state
 
         {:get_decision, inst, caller} ->
@@ -283,7 +285,7 @@ defmodule Paxos do
     send(pid, {:propose, inst, value, self()})
 
     receive do
-      {:decision, v} ->
+      {:decided, v} ->
         {:decision, v}
 
       {:abort} ->
