@@ -1,6 +1,6 @@
 # Replace with your own implementation source files
 # IEx.Helpers.c "beb.ex", "."
-IEx.Helpers.c "thepaxos.ex", "."
+IEx.Helpers.c "paxos.ex", "."
 
 # Do not modify the following ##########
 IEx.Helpers.c "test_harness.ex", "."
@@ -57,8 +57,8 @@ test_suite = [
     {&PaxosTest.run_leader_crash_complex_2/3, TestUtil.get_dist_config(host, 11), 10, "Cascading failures of leaders and non-leaders, random delays, 7 nodes"},
     {&PaxosTest.run_leader_crash_complex_2/3, TestUtil.get_local_config(11), 10, "Cascading failures of leaders and non-leaders, random delays, 7 local procs"},
 ]
-{:ok, pid} = Agent.start(fn -> 0 end, name: :counter)
 
+{:ok, pid} = Agent.start(fn -> 0 end, name: :counter)
 Node.stop
 # Confusingly, Node.start fails if epmd is not running.
 # epmd can be started manually with "epmd -daemon" or
