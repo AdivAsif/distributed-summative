@@ -145,33 +145,42 @@ defmodule Paxos do
                 end)
 
               {maxBallotNumber, maxBallotRes} = Enum.max(promisedValues)
-              beb({:accept, maxBallotNumber, maxBallotRes, state.name, inst}, state.participants)
 
-              state = %{
+              if ballot < maxBallotNumber do
+                send(state.caller, {:abort})
                 state
-                | instances:
-                    Map.put(
-                      state.instances,
-                      inst,
-                      Map.put(state.instances[inst], :maxBallot, maxBallotNumber)
-                    )
-              }
+              else
+                beb(
+                  {:accept, maxBallotNumber, maxBallotRes, state.name, inst},
+                  state.participants
+                )
 
-              state = %{
-                state
-                | instances:
-                    Map.put(
-                      state.instances,
-                      inst,
+                state = %{
+                  state
+                  | instances:
                       Map.put(
-                        state.instances[inst],
-                        :votes,
-                        Map.put(state.instances[inst].votes, maxBallotNumber, maxBallotRes)
+                        state.instances,
+                        inst,
+                        Map.put(state.instances[inst], :maxBallot, maxBallotNumber)
                       )
-                    )
-              }
+                }
 
-              state
+                state = %{
+                  state
+                  | instances:
+                      Map.put(
+                        state.instances,
+                        inst,
+                        Map.put(
+                          state.instances[inst],
+                          :votes,
+                          Map.put(state.instances[inst].votes, maxBallotNumber, maxBallotRes)
+                        )
+                      )
+                }
+
+                state
+              end
             end
           else
             state
