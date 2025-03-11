@@ -267,15 +267,6 @@ defmodule Paxos do
           end
 
           state
-
-        {:set_caller, caller} ->
-          state =
-            cond do
-              state.caller == nil -> %{state | caller: caller}
-              true -> state
-            end
-
-          state
       end
 
     run(state)

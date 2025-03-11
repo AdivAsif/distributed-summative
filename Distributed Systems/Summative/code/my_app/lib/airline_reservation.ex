@@ -39,10 +39,7 @@ defmodule SeatReservation do
           if Paxos.propose(state.pax_pid, state.last_instance + 1, t, 1000) == {:abort} do
             send(client, {:abort})
           else
-            IO.puts(
-              "#{inspect(Paxos.get_decision(state.pax_pid, state.last_instance + 1, 1000))}"
-            )
-
+            Paxos.get_decision(state.pax_pid, state.last_instance + 1, 1000)
             %{state | pending: {state.last_instance + 1, client}}
           end
 
